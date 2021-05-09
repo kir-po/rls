@@ -1,0 +1,383 @@
+unit URLS;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs,UTable, ExtCtrls, StdCtrls, ComCtrls;
+
+type
+  TMatrixNayada = array [1..4096,1..4096] of Integer;
+  TMatrixBig = array [1..3200,1..1024] of Integer;
+  TMatrixSmall = array [1..400,1..1024] of Integer;
+  TForm1 = class(TForm)
+    Image1: TImage;
+    Button1: TButton;
+    Timer1: TTimer;
+    Button2: TButton;
+    GroupBox1: TGroupBox;
+    TrackBar1: TTrackBar;
+    Label1: TLabel;
+    GroupBox2: TGroupBox;
+    CheckBox1: TCheckBox;
+    Label2: TLabel;
+    Button3: TButton;
+    OpenDialog1: TOpenDialog;
+    procedure FormCreate(Sender: TObject);
+    procedure Ekran();
+    procedure FillTable();
+    procedure Button1Click(Sender: TObject);
+    function ColCalc (var matr: TMatrixSmall; x,y:Integer):TColor;
+    procedure MinMax(var matr:TMatrixBig; m,n:Integer);
+    procedure Timer1Timer(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure TrackBar1Change(Sender: TObject);
+    procedure Porog();
+    procedure AutoPorog();
+    procedure CheckBox1Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+    procedure ResizeTable();
+    procedure RLI(az,da: Integer);
+    procedure NayadaToBussol();
+  
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+var
+  Form1: TForm1;
+  nayada_table: TMatrixNayada;
+  table: TMatrixBig;
+  table_por: TMatrixBig;
+  small_table: TMatrixSmall;
+  x0,y0,R,G,B: Integer;
+  maxM,minM: Integer;             //макс., мин. значение матрицы.
+  //RGB1: TColor;
+  cvet: TColor;
+  rad_ed: Double;
+  az:Integer;
+  man_porog: Integer;              //ручной порог
+  auto_porog: Integer;             //автопорог
+
+implementation
+
+{$R *.dfm}
+//Пользовательские функции:
+
+function TForm1.ColCalc (var matr: TMatrixSmall; x,y:Integer):TColor;
+// matr - матрица АЛ и ДД
+// x, y - координаты ячейки
+// m, n - ширина и длина матрицы
+var
+  R1,G1,B1:Integer;               //R1,G1,B1 - результирующий цвет.
+  XY:Integer;                     //x,y-ое значение матрицы.
+  v,Ya,Cb,Cr: Double;             //
+begin
+  XY:=matr[x,y];
+  //преобразуем в YCbCr
+  Ya:=XY/(maxM-minM)*255;
+  Cb:=-0.1687*R-0.3313*G+0.5*B+128.0;
+  Cr:=0.5*R-0.4187*G-0.0813*B+128.0;
+  //считаем B
+  v:=Ya + 1.772 * (Cb - 128.0);
+  if v > 255 then v := 255 else if v < 0 then v := 0;
+  B1:=Round(v);
+  //считаем G
+  v:=Ya - 0.34414 * (Cb - 128.0) - 0.71414 * (Cr - 128.0);
+  if v > 255 then v := 255 else if v < 0 then v := 0;
+  G1:=Round(v);
+  //считаем R
+  v:=Ya + 1.402 * (Cr - 128.0);
+  if v > 255 then v := 255 else if v < 0 then v := 0;
+  R1:=Round(v);
+  //Результат
+  Result:=RGB(R1, G1, B1);
+end;
+
+
+//Пользовательские процедуры:
+procedure TForm1.MinMax(var matr: TMatrixBig; m,n:Integer);
+var
+  i,j:Integer;                    //Счётчики для поиска макс., мин. зн.
+begin
+  //находим максимальное и минимальное значение в матрице.
+  maxM := matr[1, 1];
+  minM := matr[1, 1];
+  for i := 1 to m do
+    for j := 1 to n do
+    begin
+      if matr[i, j] < minM then
+        minM := matr[i, j];
+      if matr[i, j] > maxM then
+        maxM := matr[i, j];
+    end;
+  ResizeTable;
+  TrackBar1.Max:=maxM;
+end;
+
+procedure TForm1.Ekran();
+begin
+  with Image1.Canvas do
+    begin
+      Brush.Color:=clBtnFace;
+      Rectangle(0,0,Image1.Width,Image1.Height);
+      Brush.Color:=clBlack;
+      Ellipse(0,0,Image1.Width,Image1.Height);
+    end;
+end;
+
+procedure TForm1.FillTable();
+var
+i,j,max: integer;
+begin
+  max:=50;
+  for i:=0 to 3199 do
+    for j:=0 to 1023 do
+      begin
+        table[i+1,j+1]:=Random(max);
+        table_por[i+1,j+1]:=table[i+1,j+1]-man_porog;
+        Form2.StringGrid1.Cells[i,j]:=floattostr(table[i+1,j+1]);
+      end;
+  ResizeTable;
+end;
+
+procedure TForm1.ResizeTable();
+var
+  i,j,k: Integer;                       //счётчики
+  summ: Double;                         //сумма значений промежуточного массива
+  p_table: array [1..8] of Integer;     //промежуточный массив
+begin
+  for i:=1 to 400 do
+    for j:=1 to 1024 do
+      begin
+        summ:=0;
+        for k:=1 to 8 do
+          begin
+            p_table[k]:=table_por[((i-1)*8)+k,j];
+            summ:=summ+p_table[k];
+          end;
+        small_table[i,j]:=Round(summ/8);
+      end;
+end;
+
+procedure TForm1.Porog();
+var
+a,b,c,d,i,j,k,l: integer;
+begin
+  man_porog:=TrackBar1.Position;
+  for i:=1 to 3200 do
+    for j:=1 to 1024 do
+      begin
+        table_por[i,j]:=table[i,j]-man_porog;
+      end;
+  a:=Form2.StringGrid1.LeftCol;
+  b:=Form2.StringGrid1.LeftCol+Form2.StringGrid1.VisibleColCount;
+  c:=Form2.StringGrid1.TopRow;
+  d:=Form2.StringGrid1.TopRow+Form2.StringGrid1.VisibleRowCount;
+  for k:=a to b do
+    for l:=c to d do
+      begin
+        Form2.StringGrid1.Cells[k,l]:=FloatToStr(table_por[k+1,l+1]);
+      end;
+  ResizeTable;
+end;
+
+procedure TForm1.AutoPorog();
+var
+a,b,c,d,i,j,k,l: Integer;
+s: Integer;
+begin
+  s:=0;
+  for i:=3000 to 3200 do
+    for j:=1 to 1024 do
+      begin
+        s:=s+table[i,j];
+      end;
+  auto_porog:=Round(s/(200*1024));
+  Label2.Caption:='Значение автопорога: ' + IntToStr(auto_porog);
+  for i:=1 to 3200 do
+    for j:=1 to 1024 do
+      begin
+        table_por[i,j]:=table[i,j]-auto_porog;
+      end;
+
+  //заполнение грида
+  a:=Form2.StringGrid1.LeftCol;
+  b:=Form2.StringGrid1.LeftCol+Form2.StringGrid1.VisibleColCount;
+  c:=Form2.StringGrid1.TopRow;
+  d:=Form2.StringGrid1.TopRow+Form2.StringGrid1.VisibleRowCount;
+  for k:=a to b do
+    for l:=c to d do
+      begin
+        Form2.StringGrid1.Cells[k,l]:=FloatToStr(table_por[k+1,l+1]);
+      end;
+  ResizeTable;
+end;
+
+procedure TForm1.NayadaToBussol();
+var
+  F: File;                              //файл с аз. лин., дискр. дальн. Наяда-5МП
+  StrList: TStringList;                 //список строк
+  i,j,k: Integer;                       //счётчики
+  sm: Integer;                          //смещение
+  p_table: array [1..4] of Integer;     //промежуточный массив
+  summ: Double;                         //сумма значений промежуточного массива
+begin
+  //загружаем файл в StrList
+  if OpenDialog1.Execute
+  then AssignFile(F,OpenDialog1.FileName)
+  else
+    begin
+      ShowMessage('GoodBye!');
+      Exit;
+    end;
+  StrList:=TStringList.Create;
+  StrList.Sorted:=False;
+  StrList.Duplicates:=dupIgnore;
+  StrList.LoadFromFile(OpenDialog1.FileName);
+
+  //загружаем данные в массив Наяда-5МП
+  sm:=0;
+  for j:=0 to 4095 do
+    for i:=0 to 4103 do
+      begin
+        if i>7 then nayada_table[i-7,j+1]:=StrToInt('$'+StrList[i+sm]);
+        if sm<16805880 then
+          begin
+            if i=4103 then sm:=sm+4104;
+          end;
+      end;
+
+  //преобразуем в массив Буссоль-С
+  for i:=1 to 3200 do
+    for j:=1 to 1024 do
+      begin
+      summ:=0;
+        for k:=1 to 4 do
+          begin
+            p_table[k]:=nayada_table[i,((j-1)*4)+k];
+            summ:=summ+p_table[k];
+          end;
+        table[i,j]:=Round(summ/4);
+      end;
+    ShowMessage('Загружено!');
+end;
+
+
+
+
+
+//Не пользовательские процедуры:
+procedure TForm1.FormCreate(Sender: TObject);
+begin
+  Form1.DoubleBuffered:=True;
+  man_porog:=0;
+  x0:=Round(Image1.Width/2);
+  y0:=Round(Image1.Height/2);
+  az:=1;
+  rad_ed:=(2*Pi)/1024;
+  R:=50;
+  G:=200;
+  B:=50;
+  Ekran;
+end;
+
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  MinMax(table,3200,1024);
+  Timer1.Enabled:=True;
+end;
+
+procedure TForm1.Timer1Timer(Sender: TObject);
+var
+  da:Integer;
+begin
+  if az=1024 then az:=0;
+  for da:=0 to 399 do
+    begin
+      cvet:=ColCalc(small_table,da+1,az+1);
+      RLI(az,da);
+    end;  
+  az:=az+1;
+end;
+
+procedure TForm1.RLI(az,da: Integer);
+var
+  alph,alph0: Double;
+  rad_az,rad_alph0,rad_alph: Double;
+  delta_y,delta_x,delta_y0,delta_x0: Integer;
+begin
+  alph0:=az-0.5;
+  alph:=1;
+  rad_alph0:=rad_ed*alph0;
+  rad_alph:=rad_ed*alph;
+  rad_az:=rad_ed*az;
+  //преобразование в пол¤рные координаты:
+  delta_x:=Round(Sin(rad_alph0+rad_alph)*da);
+  delta_y:=Round(Cos(rad_alph0+rad_alph)*da);
+  delta_x0:=Round(Sin(rad_alph0)*da);
+  delta_y0:=Round(Cos(rad_alph0)*da);
+  //хитрость:
+  if (delta_x=delta_x0) and (delta_y=delta_y0)
+  then
+    begin
+      delta_x:=Round(Sin(rad_az)*da);
+      delta_y:=Round(Cos(rad_az)*da);
+      //Image1.Canvas.Pixels[x0+delta_x,y0-delta_y]:=cvet;
+      with Image1.Canvas do
+        begin
+          Brush.Color:=cvet;
+          Pen.Color:=cvet;
+          Ellipse(x0+delta_x-1,y0-delta_y-1,x0+delta_x+1,y0-delta_y+1);
+        end;
+    end
+  else
+    begin
+      //отрисовка секторов:
+      with Image1.Canvas do
+        begin
+          Pen.Color:=cvet;
+          Arc(x0-Round(da),y0-Round(da),x0+Round(da),y0+Round(da),x0+delta_x,y0-delta_y,x0+delta_x0,y0-delta_y0);
+        end;
+    end;
+end;
+
+procedure TForm1.Button2Click(Sender: TObject);
+begin
+  az:=0;
+end;
+
+procedure TForm1.TrackBar1Change(Sender: TObject);
+begin
+  Label1.Caption:='Значение порога: ' + IntToStr(TrackBar1.Position);
+  Porog;
+end;
+
+procedure TForm1.CheckBox1Click(Sender: TObject);
+begin
+  if CheckBox1.Checked=True then
+    begin
+      Label1.Font.Color:=clGray;
+      GroupBox1.Enabled:=False;
+      TrackBar1.Enabled:=False; 
+      TrackBar1.Position:=0;
+      AutoPorog;
+    end
+  else
+    begin
+      GroupBox1.Enabled:=True;
+      TrackBar1.Enabled:=True;
+      Label1.Font.Color:=clBlack;
+      Label2.Caption:='Значение автопорога: -';
+      Porog;
+    end;
+end;
+
+procedure TForm1.Button3Click(Sender: TObject);
+begin
+  Form2.Show;
+end;
+
+end.

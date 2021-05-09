@@ -1,0 +1,78 @@
+unit UTable;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, Grids, ExtCtrls, StdCtrls;
+
+type
+  TForm2 = class(TForm)
+    StringGrid1: TStringGrid;
+    Button1: TButton;
+    Button2: TButton;
+    Button3: TButton;
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+    procedure Button3Click(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+var
+  Form2: TForm2;
+
+  implementation
+
+uses
+  URLS;  
+
+{$R *.dfm}
+
+//Пользовательские процедуры:
+
+procedure TForm2.Button1Click(Sender: TObject);
+var
+  i,j: Integer;
+begin
+  if man_porog<>0 then ShowMessage('Установите порог на "0"!')
+  else
+    begin
+      for i:=0 to 3199 do
+        for j:=0 to 1023 do
+          begin
+            table[i+1,j+1]:=StrToInt(StringGrid1.Cells[i,j]);
+            table_por[i+1,j+1]:=table[i+1,j+1];
+          end;
+      Form1.ResizeTable;
+      ShowMessage('Данные внесены в массив');
+    end;
+end;
+
+procedure TForm2.Button2Click(Sender: TObject);
+begin
+  with Form1 do
+    begin
+      FillTable;
+      MinMax(table_por,3200,1024);
+      ShowMessage('Таблица заполнена');
+    end;
+end;
+
+procedure TForm2.Button3Click(Sender: TObject);
+var
+  i,j: Integer;
+begin
+  Form1.NayadaToBussol;
+  for i:=0 to 3199 do
+    for j:=0 to 1023 do
+      begin
+        table_por[i+1,j+1]:=table[i+1,j+1]-man_porog;
+        StringGrid1.Cells[i,j]:=IntToStr(table[i+1,j+1]);
+      end;
+  Form1.MinMax(table_por,3200,1024);
+end;
+
+end.
